@@ -77,6 +77,12 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   Complete this function! Make sure you switch between lidar and radar
   measurements.
   */
+  if (use_laser_ && meas_package.sensor_type_ == MeasurementPackage::SensorType::LASER) {
+     UpdateLidar(meas_package);
+  }
+  if (use_radar_ && meas_package.sensor_type_ == MeasurementPackage::SensorType::RADAR) {
+     UpdateRadar(meas_package);
+  }
 }
 
 /**
