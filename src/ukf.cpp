@@ -141,8 +141,8 @@ void UKF::Prediction(double delta_t) {
          x_pred(1) = p_y + v * sin(yaw) * delta_t;
       
       }
-      x_pred(0) += 1/2 * (delta_t * delta_t) * cos(yaw) * nu_a;
-      x_pred(1) += 1/2 * (delta_t * delta_t) * sin(yaw) * nu_a;
+      x_pred(0) = x_pred(0) +  1/2 * (delta_t * delta_t) * cos(yaw) * nu_a;
+      x_pred(1) = x_pred(1) +  1/2 * (delta_t * delta_t) * sin(yaw) * nu_a;
       x_pred(2) = v + delta_t * nu_a;
       x_pred(3) = yaw + yawd * delta_t + 1/2 * (delta_t * delta_t) * nu_yawdd;
       x_pred(4) = yawd + 0 + delta_t * nu_yawdd;
@@ -157,13 +157,13 @@ void UKF::Prediction(double delta_t) {
   // calculate new covariance matrix 
   P_.fill(0.0);
   for (int i = 0; i < 2 * n_aug_ + 1; i++) {
-      VectorXd x_diff = X_sigma_pred.col(i) - x_;
+      VectorXd x_diff = X_sigma_pred.col(i) - x_;      
       // normalize angle so it wil lbe between pi and -pi
       while (x_diff(3) > M_PI) x_diff(3) -=  2 * M_PI;
       while (x_diff(3) < M_PI) x_diff(3) += 2 *M_PI;
       P_ = P_ + weights_(i) * (x_diff * x_diff.transpose());
   }
-
+  Xsig_pred_ = X_sigma_pred; 
 }
 
 /**
@@ -179,6 +179,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the lidar NIS.
   */
+
 }
 
 /**
@@ -194,4 +195,62 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the radar NIS.
   */
+  // convert sigma points to radar 
+  //
+  MatrixXd R = MatrixXd (3,3);
+  R << std_radr_ * std_radr_, 0 , 0,
+       0, std_radphi_ * std_radphi_, 0,
+       0, 0, std_radrd_ * std_radrd_;
+  VectorXd z_pred = VectorXd(3);
+  z_pred.fill(0.0);
+  MatrixXd Zsig = MatrixXd(3, 2 * n_aug_ + 1);
+  for (int i; i < 2 * n_aug_ + 1; i++) {
+     VectorXd z_sig = VectorXd(3);
+     double p_x = Xsig_pred_(0, i);
+     double p_y = Xsig_pred_(1, i);
+     double yaw = Xsig_pred_(3, i);
+     double v_x = Xsig_pred_(2, i) * cos(yaw);
+     double v_y = Xsig_pred_(2, i) * sin(yaw);
+     z_sig(0) = sqrt((p_x *p_x) + (p_y * p_y));
+     z_sig(1) = atan2(p_y, p_x);
+     z_sig(2) = ((p_x * v_x) + (p_y * v_y)) / (sqrt(p_x*p_x + p_y*p_y));
+     while (z_sig(1) > M_PI) z_sig(1) -= 2 * M_PI;
+     while (z_sig(1) < M_PI) z_sig(1) += 2 * M_PI;
+     z_pred += weights_(i) * z_sig;
+     Zsig.col(i) = z_sig;
+  }
+
+  // Calculate Innovation S
+  MatrixXd S = MatrixXd(3,3);
+  S.fill(0.0);
+  for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+      VectorXd z_diff = Zsig.col(i) - z_pred;
+      while(z_diff(1) > M_PI) z_diff(1) -= 2 * M_PI;
+      while(z_diff(1) < M_PI) z_diff(1) += 2 * M_PI;
+      S = S + weights_(i) * z_diff * z_diff.transpose(); 
+  }
+  // Add noise
+  S += R;
+  // Correlation matrix between State and measurement
+  MatrixXd T = MatrixXd(n_x_, 3);
+  T.fill(0.0);
+  for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+     VectorXd x_diff = Xsig_pred_.col(i) - x_;
+     VectorXd z_diff = Zsig - z_pred;
+
+     // normalize angle
+     while(x_diff(3) > M_PI) x_diff(3) -= 2 * M_PI;
+     while(x_diff(3) < M_PI) x_diff(3) += 2 * M_PI;
+     while(z_diff(1) > M_PI) z_diff(1) -= 2 * M_PI;
+     while(z_diff(1) < M_PI) z_diff(1) += 2 * M_PI;
+     T = T + weights_(i) * x_diff * z_diff.transpose(); 
+  }
+  MatrixXd K = T * S.inverse();
+  // need to normalsize angle diff here
+  VectorXd z_diff = meas_package.raw_measurements_ - z_pred;
+  while(z_diff(1) > M_PI) z_diff(1) -= 2 * M_PI;
+  while(z_diff(1) < M_PI) z_diff(1) += 2 * M_PI;
+  x_ = x_ + K * z_diff;
+  P_ = P_ - K * S * K.transpose();
+
 }
