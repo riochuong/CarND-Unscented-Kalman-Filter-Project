@@ -179,7 +179,45 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
   You'll also need to calculate the lidar NIS.
   */
+  MatrixXd R = MatrixXd (2,2);
+  R << std_laspx_ * std_laspx_, 0 ,
+       0, std_laspy_ * std_laspy_;
+  
+  VectorXd z_pred = VectorXd(2);
+  z_pred.fill(0.0);
+  MatrixXd Zsig = MatrixXd(2, 2 * n_aug_ + 1);
+  for (int i; i < 2 * n_aug_ + 1; i++) {
+     VectorXd z_sig = VectorXd(2);
+     double p_x = Xsig_pred_(0, i);
+     double p_y = Xsig_pred_(1, i);
+     z_sig(0) = p_x;
+     z_sig(1) = p_y;
+     z_pred += weights_(i) * z_sig;
+     Zsig.col(i) = z_sig;
+  }
 
+  // Calculate Innovation S
+  MatrixXd S = MatrixXd(2,2);
+  S.fill(0.0);
+  for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+      VectorXd z_diff = Zsig.col(i) - z_pred;
+      S = S + weights_(i) * z_diff * z_diff.transpose(); 
+  }
+  // Add noise
+  S += R;
+  // Correlation matrix between State and measurement
+  MatrixXd T = MatrixXd(n_x_, 2);
+  T.fill(0.0);
+  for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+     VectorXd x_diff = Xsig_pred_.col(i) - x_;
+     VectorXd z_diff = Zsig - z_pred;
+     T = T + weights_(i) * x_diff * z_diff.transpose(); 
+  }
+  MatrixXd K = T * S.inverse();
+  // need to normalsize angle diff here
+  VectorXd z_diff = meas_package.raw_measurements_ - z_pred;
+  x_ = x_ + K * z_diff;
+  P_ = P_ - K * S * K.transpose();
 }
 
 /**
