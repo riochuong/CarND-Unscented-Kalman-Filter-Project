@@ -51,9 +51,17 @@ UKF::UKF() {
   TODO:
 
   Complete the initialization. See ukf.h for other member properties.
-
   Hint: one or more values initialized above might be wildly off...
   */
+  n_x_ = 5;
+  n_aug_ = 7;
+  lambda_ = 3 - n_aug_; 
+  weights_ = VectorXd(n_aug_);
+  weights_(0) = lambda_ / (lambda_ + n_aug_);
+  for (int i = 1; i < n_aug_; i++) {
+    weights_(i) = 1 / (2 * (lambda_ + n_aug_)) ; 
+  }
+
 }
 
 UKF::~UKF() {}
@@ -83,6 +91,79 @@ void UKF::Prediction(double delta_t) {
   Complete this function! Estimate the object's location. Modify the state
   vector, x_. Predict sigma points, the state, and the state covariance matrix.
   */
+  
+  // generate sigma points
+  // Augmentation x
+  VectorXd x_aug = VectorXd(n_aug_);
+  x_aug.head(n_x_) = x_;
+  x_aug(n_x_ + 1) = 0;
+  x_aug(n_x_ + 2) = 0;
+  
+  // augmentation P
+  MatrixXd Q = MatrixXd(2,2);
+  Q << std_a_ * std_a_, 0 ,
+       0 , std_yawdd_ * std_yawdd_;
+  
+  MatrixXd P_aug = MatrixXd(n_aug_, n_aug_);
+  P_aug.topLeftCorner(n_x_, n_x_) = P_;
+  P_aug.bottomRightCorner(2,2) = Q;
+  MatrixXd sqrt_P_aug = P_aug.llt().matrixL(); // cholevsky square matrix
+  
+  // get the X_sigma_aug
+  MatrixXd X_sigma_aug = MatrixXd(n_aug_, 2 * n_aug_ + 1);
+  X_sigma_aug.col(0) = x_aug;
+  for (int i = 1; i < n_aug_ + 1; i++) {
+      X_sigma_aug.col(i) = x_aug + sqrt(lambda_ + n_aug_) * sqrt_P_aug.col(i - 1); 
+      X_sigma_aug.col(i + n_aug_) = x_aug - sqrt(lambda_ + n_aug_) * sqrt_P_aug.col(i - 1); 
+  }
+
+  MatrixXd X_sigma_pred = MatrixXd(5, 2*n_aug_+1);
+  X_sigma_pred.fill(0.0);
+  // Now we can do prediction from each sigma point to generate the 
+  // sigma points mapping for the predicted step
+  for (int i = 0; i < 2 * n_aug_ + 1; i++)
+  {
+      VectorXd x_pred = VectorXd(n_x_);
+      float yawd = X_sigma_aug(n_x_ - 1, i);
+      float p_x = X_sigma_aug(0, i);
+      float p_y = X_sigma_aug(1, i);
+      float v = X_sigma_aug(2, i);
+      float yaw = X_sigma_aug(3, i);
+      float nu_a = X_sigma_aug(n_x_, i);
+      float nu_yawdd = X_sigma_aug(n_x_ + 1, i);
+
+      if (yawd < fabs(0.01)) {
+         x_pred(0) = p_x + v / yawd * (sin(yaw + yawd * delta_t) - sin(yaw));
+         x_pred(1) = p_y + v / yawd * (-(1) * cos(yaw + yawd * delta_t) + cos(yaw));
+         
+      } else {
+         x_pred(0) = p_x + v * cos(yaw) * delta_t;
+         x_pred(1) = p_y + v * sin(yaw) * delta_t;
+      
+      }
+      x_pred(0) += 1/2 * (delta_t * delta_t) * cos(yaw) * nu_a;
+      x_pred(1) += 1/2 * (delta_t * delta_t) * sin(yaw) * nu_a;
+      x_pred(2) = v + delta_t * nu_a;
+      x_pred(3) = yaw + yawd * delta_t + 1/2 * (delta_t * delta_t) * nu_yawdd;
+      x_pred(4) = yawd + 0 + delta_t * nu_yawdd;
+      // assign the vector to its correct column
+      X_sigma_pred.col(i) = x_pred;
+  }
+  // calcualte new x
+  x_.fill(0.0); 
+  for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+      x_ = x_ + weights_(i) * X_sigma_pred.col(i);
+  }
+  // calculate new covariance matrix 
+  P_.fill(0.0);
+  for (int i = 0; i < 2 * n_aug_ + 1; i++) {
+      VectorXd x_diff = X_sigma_pred.col(i) - x_;
+      // normalize angle so it wil lbe between pi and -pi
+      while (x_diff(3) > M_PI) x_diff(3) -=  2 * M_PI;
+      while (x_diff(3) < M_PI) x_diff(3) += 2 *M_PI;
+      P_ = P_ + weights_(i) * (x_diff * x_diff.transpose());
+  }
+
 }
 
 /**
