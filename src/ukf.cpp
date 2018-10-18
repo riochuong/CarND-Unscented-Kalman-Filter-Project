@@ -13,10 +13,10 @@ using std::vector;
  */
 UKF::UKF() {
   // if this is false, laser measurements will be ignored (except during init)
-  use_laser_ = true;
+  use_laser_ = true; //true;
 
   // if this is false, radar measurements will be ignored (except during init)
-  use_radar_ = true;
+  use_radar_ = false;
 
   // initial state vector
   x_ = VectorXd(5);
@@ -24,10 +24,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 10;
+  std_a_ = 2;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 10;
+  std_yawdd_ = 3;
   
   //DO NOT MODIFY measurement noise values below these are provided by the sensor manufacturer.
   // Laser measurement noise standard deviation position1 in m
@@ -64,16 +64,17 @@ UKF::UKF() {
   Xsig_pred_ = MatrixXd(n_x_, 2 * n_aug_ + 1);
   Xsig_pred_.fill(0.5);
   x_ <<   5.7441,
-    1.3800,
-    2.2049,
-    0.5015,
-    0.3528;
-  P_ <<     0.0043,   -0.0013,    0.0030,   -0.0022,   -0.0020,
-    -0.0013,    0.0077,    0.0011,    0.0071,    0.0060,
-    0.0030,    0.0011,    0.0054,    0.0007,    0.0008,
-    -0.0022,    0.0071,    0.0007,    0.0098,    0.0100,
-    -0.0020,    0.0060,    0.0008,    0.0100,    0.0123;
+          1.3800,
+          0.2049,
+          0.0,
+          0.0; // x, y, v, yaw, yawd
 
+  P_.fill(0.0);
+  for (int i = 0; i < n_x_; i++){
+     P_(i, i) = 0.15;
+  }
+
+  std::cout << "P initialized :" << P_ << std::endl;
 }
 
 
@@ -99,7 +100,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
         x_[1] = meas_package.raw_measurements_[1];
     }
 
-     if (use_laser_ && meas_package.sensor_type_ == MeasurementPackage::SensorType::RADAR) {
+    if (use_radar_ && meas_package.sensor_type_ == MeasurementPackage::SensorType::RADAR) {
         double rho = meas_package.raw_measurements_[0];
         double bearing = meas_package.raw_measurements_[1];
         x_[0] = rho * cos(bearing); 
@@ -243,7 +244,8 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   z_pred.fill(0.0);
   MatrixXd Zsig = MatrixXd(2, 2 * n_aug_ + 1);
   Zsig.fill(0.0);
-  for (int i; i < 2 * n_aug_ + 1; i++) {
+  // convert from prediction space to measurement space
+  for (int i = 0; i < 2 * n_aug_ + 1; i++) {
      VectorXd z_sig = VectorXd(2);
      double p_x = Xsig_pred_(0, i);
      double p_y = Xsig_pred_(1, i);
@@ -268,6 +270,8 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
   for (int i = 0; i < 2 * n_aug_ + 1; i++) {
      VectorXd x_diff = Xsig_pred_.col(i) - x_;
      VectorXd z_diff = Zsig.col(i) - z_pred;
+     while (x_diff(3) > M_PI) x_diff(3) -=  2 * M_PI;
+     while (x_diff(3) < M_PI) x_diff(3) += 2 *M_PI;
      T = T + weights_(i) * x_diff * z_diff.transpose(); 
   }
   MatrixXd K = T * S.inverse();
