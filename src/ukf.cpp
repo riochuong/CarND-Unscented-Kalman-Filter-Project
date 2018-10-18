@@ -13,7 +13,7 @@ using std::vector;
  */
 UKF::UKF() {
   // if this is false, laser measurements will be ignored (except during init)
-  use_laser_ = false;
+  use_laser_ = true;
 
   // if this is false, radar measurements will be ignored (except during init)
   use_radar_ = true;
@@ -113,14 +113,14 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
   
 
   double delta_t = (meas_package.timestamp_ -  time_us_) / 1000000.0;
-  Prediction(delta_t);
   std::cout << "delta t: " << delta_t << std::endl;
   if (use_laser_ && meas_package.sensor_type_ == MeasurementPackage::SensorType::LASER) {
-    
+     Prediction(delta_t);
      UpdateLidar(meas_package);
   }
   else if (use_radar_ && meas_package.sensor_type_ == MeasurementPackage::SensorType::RADAR) {
-     UpdateRadar(meas_package);
+      Prediction(delta_t);
+      UpdateRadar(meas_package);
   }
   time_us_ = meas_package.timestamp_;
   std::cout << "Complete Process MeasurementPackage" << std::endl;
@@ -199,7 +199,8 @@ void UKF::Prediction(double delta_t) {
       // assign the vector to its correct column
       X_sigma_pred.col(i) = x_pred;
   }
-  // calcualte new x
+  // Recover the gaussian 
+  // calcualte new x as the mean of all the sigma points
   x_.fill(0.0);
   for (int i = 0; i < 2 * n_aug_ + 1; i++) {
       //std::cout << "\nX_sigma Pred : \n" <<  X_sigma_pred.col(i) << std::endl;
@@ -207,14 +208,13 @@ void UKF::Prediction(double delta_t) {
       //std::cout << "\n\n\nw * col: \n" <<  weights_(i) * X_sigma_pred.col(i) << std::endl;
       x_ = x_ + weights_(i) * X_sigma_pred.col(i);
   }
-  // calculate new covariance matrix 
+  // calculate new covariance matrix with the new mean above
   P_.fill(0.0);
   for (int i = 0; i < 2 * n_aug_ + 1; i++) {
       VectorXd x_diff = X_sigma_pred.col(i) - x_;      
       // normalize angle so it wil lbe between pi and -pi
-      if (x_diff(3) > M_PI) x_diff(3) -=  2 * M_PI;
-      if (x_diff(3) < M_PI) x_diff(3) += 2 *M_PI;
-      std::cout << "x_diff" << x_diff << std::endl;
+      while (x_diff(3) > M_PI) x_diff(3) -=  2 * M_PI;
+      while (x_diff(3) < M_PI) x_diff(3) += 2 *M_PI;
       P_ = P_ + weights_(i) * (x_diff * x_diff.transpose());
   }
   Xsig_pred_ = X_sigma_pred; 
@@ -301,6 +301,8 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   VectorXd z_pred = VectorXd(3);
   z_pred.fill(0.0);
   MatrixXd Zsig = MatrixXd(3, 2 * n_aug_ + 1);
+  
+  // Transform sigma points from prediction space to measurement space 
   for (int i =0 ; i < 2 * n_aug_ + 1; i++) {
      VectorXd z_sig = VectorXd(3);
      double p_x = Xsig_pred_(0, i);
@@ -314,7 +316,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
      //while (z_sig(1) > M_PI) z_sig(1) -= 2 * M_PI;
      //while (z_sig(1) < M_PI) z_sig(1) += 2 * M_PI;
      z_pred += weights_(i) * z_sig;
-     std::cout << "\n Zpred \n" << z_pred << std::endl;
+  //   std::cout << "\n Zpred \n" << z_pred << std::endl;
      Zsig.col(i) = z_sig;
   }
 
@@ -326,7 +328,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   S.fill(0.0);
   for (int i = 0; i < 2 * n_aug_ + 1; i++) {
       VectorXd z_diff = Zsig.col(i) - z_pred;
-      std::cout << "\n z diff \n" << z_diff << std::endl;
+//      std::cout << "\n z diff \n" << z_diff << std::endl;
       while (z_diff(1) > M_PI) z_diff(1) -= 2 * M_PI;
       while (z_diff(1) < M_PI) z_diff(1) += 2 * M_PI;
       S = S + weights_(i) * z_diff * z_diff.transpose(); 
@@ -335,14 +337,12 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   S += R;
   // Correlation matrix between State and measurement
   MatrixXd T = MatrixXd(n_x_, 3);
-  std::cout << "\n X sigd Pred \n" << Xsig_pred_ << std::endl;
-  std::cout << "\n x_ \n" << x_ << std::endl;
   T.fill(0.0);
   for (int i = 0; i < 2 * n_aug_ + 1; i++) {
      VectorXd x_diff = Xsig_pred_.col(i) - x_;
      VectorXd z_diff = Zsig.col(i) - z_pred;
 
-     std::cout << "\n x_dif \n" << x_diff << std::endl;
+ //    std::cout << "\n x_dif \n" << x_diff << std::endl;
      // normalize angle
      while (x_diff(3) > M_PI) x_diff(3) -= 2 * M_PI;
      while (x_diff(3) < M_PI) x_diff(3) += 2 * M_PI;
@@ -358,5 +358,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   x_ = x_ + K * z_diff;
   P_ = P_ - K * S * K.transpose();
 
+  std::cout << "\n P after Update Radar Complete \n" << P_ <<std::endl;
+  std::cout << "\n X after Update Radar Complete \n" << x_ <<std::endl;
   std::cout << "Update Radar Complete" << std::endl;
 }
