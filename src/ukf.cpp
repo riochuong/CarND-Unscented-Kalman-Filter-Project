@@ -24,10 +24,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 2;
+  std_a_ = 1.5;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 3;
+  std_yawdd_ = 2;
   
   //DO NOT MODIFY measurement noise values below these are provided by the sensor manufacturer.
   // Laser measurement noise standard deviation position1 in m
@@ -60,14 +60,16 @@ UKF::UKF() {
   for (int i = 1; i < 2 * n_aug_ + 1; i++) {
     weights_(i) = 1 / (2 * (lambda_ + n_aug_)) ; 
   }
+  
+  std::cout << weights_ << std::endl;
 
   Xsig_pred_ = MatrixXd(n_x_, 2 * n_aug_ + 1);
   Xsig_pred_.fill(0.5);
-  x_ <<   5.7441,
-          1.3800,
-          0.2049,
-          0.0,
-          0.0; // x, y, v, yaw, yawd
+  x_ <<   0,
+          0,
+          0.001,
+          0.1,
+          0.001; // x, y, v, yaw, yawd
 
   P_.fill(0.0);
   for (int i = 0; i < n_x_; i++){
@@ -105,6 +107,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
         double bearing = meas_package.raw_measurements_[1];
         x_[0] = rho * cos(bearing); 
         x_[1] = rho * sin(bearing);
+        x_[2] = meas_package.raw_measurements_[2];
     }
     std::cout << "Initialized" << std::endl;
     is_initialized_ = true;
@@ -198,6 +201,9 @@ void UKF::Prediction(double delta_t) {
       x_pred(3) = yaw + yawd * delta_t + 1/2 * (delta_t * delta_t) * nu_yawdd;
       x_pred(4) = yawd + 0 + delta_t * nu_yawdd;
       // assign the vector to its correct column
+      //while (x_pred(3) > M_PI) x_pred(3) -= 2 * M_PI;
+      //while (x_pred(3) < M_PI) x_pred(3) += 2 * M_PI;
+     
       X_sigma_pred.col(i) = x_pred;
   }
   // Recover the gaussian 
@@ -317,8 +323,8 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
      z_sig(0) = sqrt((p_x *p_x) + (p_y * p_y));
      z_sig(1) = atan2(p_y, p_x);
      z_sig(2) = ((p_x * v_x) + (p_y * v_y)) / (sqrt(p_x*p_x + p_y*p_y));
-     //while (z_sig(1) > M_PI) z_sig(1) -= 2 * M_PI;
-     //while (z_sig(1) < M_PI) z_sig(1) += 2 * M_PI;
+     while (z_sig(1) > M_PI) z_sig(1) -= 2 * M_PI;
+     while (z_sig(1) < M_PI) z_sig(1) += 2 * M_PI;
      z_pred += weights_(i) * z_sig;
   //   std::cout << "\n Zpred \n" << z_pred << std::endl;
      Zsig.col(i) = z_sig;
