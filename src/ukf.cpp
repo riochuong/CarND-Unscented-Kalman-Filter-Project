@@ -16,7 +16,7 @@ UKF::UKF() {
   use_laser_ = true; //true;
 
   // if this is false, radar measurements will be ignored (except during init)
-  use_radar_ = false;
+  use_radar_ = true;
 
   // initial state vector
   x_ = VectorXd(5);
@@ -24,10 +24,10 @@ UKF::UKF() {
   P_ = MatrixXd(5, 5);
 
   // Process noise standard deviation longitudinal acceleration in m/s^2
-  std_a_ = 1.5;
+  std_a_ = 2;
 
   // Process noise standard deviation yaw acceleration in rad/s^2
-  std_yawdd_ = 2;
+  std_yawdd_ = 0.5;
   
   //DO NOT MODIFY measurement noise values below these are provided by the sensor manufacturer.
   // Laser measurement noise standard deviation position1 in m
@@ -67,9 +67,9 @@ UKF::UKF() {
   Xsig_pred_.fill(0.5);
   x_ <<   0,
           0,
-          0.001,
-          0.1,
-          0.001; // x, y, v, yaw, yawd
+          0.02, // v
+          1, // yaw
+          0.1; // yawd
 
   P_.fill(0.0);
   for (int i = 0; i < n_x_; i++){
@@ -107,7 +107,7 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
         double bearing = meas_package.raw_measurements_[1];
         x_[0] = rho * cos(bearing); 
         x_[1] = rho * sin(bearing);
-        x_[2] = meas_package.raw_measurements_[2];
+        //x_[2] = meas_package.raw_measurements_[2];
     }
     std::cout << "Initialized" << std::endl;
     is_initialized_ = true;
@@ -186,7 +186,7 @@ void UKF::Prediction(double delta_t) {
       float nu_a = X_sigma_aug(5, i);
       float nu_yawdd = X_sigma_aug(6, i);
 
-      if (yawd > fabs(0.001)) {
+      if (fabs(yawd) > 0.001) {
          x_pred(0) = p_x + v / yawd * (sin(yaw + yawd * delta_t) - sin(yaw));
          x_pred(1) = p_y + v / yawd * (-(1) * cos(yaw + yawd * delta_t) + cos(yaw));
          
@@ -221,7 +221,7 @@ void UKF::Prediction(double delta_t) {
       VectorXd x_diff = X_sigma_pred.col(i) - x_;      
       // normalize angle so it wil lbe between pi and -pi
       while (x_diff(3) > M_PI) x_diff(3) -=  2 * M_PI;
-      while (x_diff(3) < M_PI) x_diff(3) += 2 *M_PI;
+      while (x_diff(3) < -M_PI) x_diff(3) += 2 *M_PI;
       P_ = P_ + weights_(i) * (x_diff * x_diff.transpose());
   }
   Xsig_pred_ = X_sigma_pred; 
@@ -277,7 +277,7 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
      VectorXd x_diff = Xsig_pred_.col(i) - x_;
      VectorXd z_diff = Zsig.col(i) - z_pred;
      while (x_diff(3) > M_PI) x_diff(3) -=  2 * M_PI;
-     while (x_diff(3) < M_PI) x_diff(3) += 2 *M_PI;
+     while (x_diff(3) < -M_PI) x_diff(3) += 2 *M_PI;
      T = T + weights_(i) * x_diff * z_diff.transpose(); 
   }
   MatrixXd K = T * S.inverse();
@@ -324,7 +324,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
      z_sig(1) = atan2(p_y, p_x);
      z_sig(2) = ((p_x * v_x) + (p_y * v_y)) / (sqrt(p_x*p_x + p_y*p_y));
      while (z_sig(1) > M_PI) z_sig(1) -= 2 * M_PI;
-     while (z_sig(1) < M_PI) z_sig(1) += 2 * M_PI;
+     while (z_sig(1) < -M_PI) z_sig(1) += 2 * M_PI;
      z_pred += weights_(i) * z_sig;
   //   std::cout << "\n Zpred \n" << z_pred << std::endl;
      Zsig.col(i) = z_sig;
@@ -340,7 +340,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
       VectorXd z_diff = Zsig.col(i) - z_pred;
 //      std::cout << "\n z diff \n" << z_diff << std::endl;
       while (z_diff(1) > M_PI) z_diff(1) -= 2 * M_PI;
-      while (z_diff(1) < M_PI) z_diff(1) += 2 * M_PI;
+      while (z_diff(1) < -M_PI) z_diff(1) += 2 * M_PI;
       S = S + weights_(i) * z_diff * z_diff.transpose(); 
   }
   // Add noise
@@ -355,16 +355,16 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
  //    std::cout << "\n x_dif \n" << x_diff << std::endl;
      // normalize angle
      while (x_diff(3) > M_PI) x_diff(3) -= 2 * M_PI;
-     while (x_diff(3) < M_PI) x_diff(3) += 2 * M_PI;
+     while (x_diff(3) < -M_PI) x_diff(3) += 2 * M_PI;
      while (z_diff(1) > M_PI) z_diff(1) -= 2 * M_PI;
-     while (z_diff(1) < M_PI) z_diff(1) += 2 * M_PI;
+     while (z_diff(1) < -M_PI) z_diff(1) += 2 * M_PI;
      T = T + weights_(i) * x_diff * z_diff.transpose(); 
   }
   MatrixXd K = T * S.inverse();
   // need to normalsize angle diff here
   VectorXd z_diff = meas_package.raw_measurements_ - z_pred;
   while(z_diff(1) > M_PI) z_diff(1) -= 2 * M_PI;
-  while(z_diff(1) < M_PI) z_diff(1) += 2 * M_PI;
+  while(z_diff(1) < -M_PI) z_diff(1) += 2 * M_PI;
   x_ = x_ + K * z_diff;
   P_ = P_ - K * S * K.transpose();
 
