@@ -66,8 +66,13 @@ public:
 
   ///* Sigma point spreading parameter
   double lambda_;
-
-
+  
+  double radar_NIS_threshold_ = 7.815;
+  double lidar_NIS_threshold_ = 5.991;
+  double radar_below_NIS_count_ = 0;
+  double lidar_below_NIS_count_ = 0;
+  double total_lidar_sample_ = 0;
+  double total_radar_sample_ = 0;
   /**
    * Constructor
    */

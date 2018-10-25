@@ -107,7 +107,6 @@ void UKF::ProcessMeasurement(MeasurementPackage meas_package) {
         double bearing = meas_package.raw_measurements_[1];
         x_[0] = rho * cos(bearing); 
         x_[1] = rho * sin(bearing);
-        //x_[2] = meas_package.raw_measurements_[2];
     }
     std::cout << "Initialized" << std::endl;
     is_initialized_ = true;
@@ -280,12 +279,20 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
      while (x_diff(3) < -M_PI) x_diff(3) += 2 *M_PI;
      T = T + weights_(i) * x_diff * z_diff.transpose(); 
   }
-  MatrixXd K = T * S.inverse();
+  MatrixXd S_inv = S.inverse();
+  MatrixXd K = T * S_inv; 
   // need to normalsize angle diff here
   VectorXd z_diff = meas_package.raw_measurements_ - z_pred;
   x_ = x_ + K * z_diff;
   P_ = P_ - K * S * K.transpose();
   std::cout << "Update Lidar Complete" << std::endl;
+  // check nis
+  VectorXd z = meas_package.raw_measurements_; 
+  double nis = (z - z_pred).transpose() * S_inv * (z - z_pred);
+  if (nis < lidar_NIS_threshold_) lidar_below_NIS_count_++;
+  std::cout << "\nLidar NIS: " << nis << std::endl;
+  std::cout << "\nPercentag of sample below 95 chi^2: " 
+      << lidar_below_NIS_count_ / (++total_lidar_sample_) << std::endl;
 }
 
 /**
@@ -331,7 +338,7 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   }
 
   
-  std::cout << "\n Zsig \n" << Zsig << std::endl;
+  //std::cout << "\n Zsig \n" << Zsig << std::endl;
   // std::cout << "\n Zpred \n" << z_pred << std::endl;
   // Calculate Innovation S
   MatrixXd S = MatrixXd(3,3);
@@ -360,7 +367,8 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
      while (z_diff(1) < -M_PI) z_diff(1) += 2 * M_PI;
      T = T + weights_(i) * x_diff * z_diff.transpose(); 
   }
-  MatrixXd K = T * S.inverse();
+  MatrixXd S_inv = S.inverse();
+  MatrixXd K = T * S_inv;
   // need to normalsize angle diff here
   VectorXd z_diff = meas_package.raw_measurements_ - z_pred;
   while(z_diff(1) > M_PI) z_diff(1) -= 2 * M_PI;
@@ -368,7 +376,14 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
   x_ = x_ + K * z_diff;
   P_ = P_ - K * S * K.transpose();
 
-  std::cout << "\n P after Update Radar Complete \n" << P_ <<std::endl;
-  std::cout << "\n X after Update Radar Complete \n" << x_ <<std::endl;
+  //std::cout << "\n P after Update Radar Complete \n" << P_ <<std::endl;
+  //std::cout << "\n X after Update Radar Complete \n" << x_ <<std::endl;
+  // Calculate Radar NIS
+  VectorXd z = meas_package.raw_measurements_; 
+  double nis = (z - z_pred).transpose() * S_inv * (z- z_pred);
+  if (nis < radar_NIS_threshold_) radar_below_NIS_count_++;
+  std::cout << "\nRadar NIS: " << nis << std::endl;
+  std::cout << "\nPercentag of sample below 95 chi^2: " 
+      << radar_below_NIS_count_ / (++total_radar_sample_) << std::endl;
   std::cout << "Update Radar Complete" << std::endl;
 }
